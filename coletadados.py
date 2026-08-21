@@ -18,7 +18,7 @@ def coletar_dados(intervalo_segundos=5, limite=5):
         while contador < limite:
             contador += 1
 
-            usuario = "seuNome"
+            usuario = "Bruno"
             cpu_porcentagem = psutil.cpu_percent(interval=1)
             cpu_frequencia = round(psutil.cpu_freq().current) 
             memoria_porcentagem = round(psutil.virtual_memory().percent)
