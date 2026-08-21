@@ -32,7 +32,7 @@ print(tabela_final.groupby("Usuario")["Memoria%"].mean().to_string())
 print("\n")
 
 print("Pico de CPU:")
-print(tabela_final.groupby("Usuario")["CPU%"].mean().to_string())
+print(tabela_final.groupby("Usuario")["CPU%"].max().to_string())
 
 print("\n")
 
