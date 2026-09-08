@@ -12,7 +12,7 @@ def coletar_dados(intervalo_segundos=5, limite=5):
 
     with open('./leitura.csv', 'w', newline='', encoding='utf-8') as arquivo_csv:
         csv_linha = csv.writer(arquivo_csv, delimiter=';')
-        
+        # cabeçalho executado apenas uma vez
         csv_linha.writerow(['Usuario', 'Data Hora', 'CPU%', 'Freq CPU (MHz)', 'Memoria%', 'Disco%'])
 
         while contador < limite:
