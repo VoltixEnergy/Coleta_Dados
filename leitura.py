@@ -1,49 +1,36 @@
-import csv
-import datetime
-import time
+import os
 import pandas as pd
-import glob
 
-def leitura_dados():
+# 1. Lista todos os ficheiros na pasta atual e filtra apenas os .csv
+ficheiros_csv = [
+    f for f in os.listdir(".") 
+    if f.endswith(".csv") and "dados_completos" not in f
+]
 
-    arquivos = glob.glob('./data/*.csv')
+print(f"Ficheiros encontrados ({len(ficheiros_csv)}): {ficheiros_csv}")
 
-    lista_tabelas = [pd.read_csv(arq, sep=';') for arq in arquivos]
+# 2. Lê e concatena os ficheiros
+lista_dataframes = [pd.read_csv(f, sep=";") for f in ficheiros_csv]
+df = pd.concat(lista_dataframes, ignore_index=True)
 
-    tabela_final = pd.concat(lista_tabelas, ignore_index=True)
+# 3. Tratamento e ordenação
+colunas_metricas = [
+    "cpu_use_percent",
+    "ram_total_gb",
+    "ram_free_gb",
+    "disk_free_percent",
+    "network_sent",
+    "network_received",
+    "package_drop_total",
+]
 
-    return tabela_final
+for col in colunas_metricas:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
+df["created_at"] = pd.to_datetime(
+    df["created_at"], format="%d/%m/%Y %H:%M:%S", errors="coerce"
+)
+df = df.sort_values(by="created_at").reset_index(drop=True)
 
-tabela_final = leitura_dados()
-
-pd.set_option("display.max_rows", None)
-pd.set_option("display.max_columns", None)
-
-print("\n")
-
-print(tabela_final)
-
-print("\n")
-
-print("Média de RAM:")
-print(tabela_final.groupby("Usuario")["Memoria%"].mean().to_string())
-
-print("\n")
-
-print("Pico de CPU:")
-print(tabela_final.groupby("Usuario")["CPU%"].max().to_string())
-
-print("\n")
-
-print("Média de disco:")
-print(tabela_final.groupby("Usuario")["Disco%"].max().to_string())
-
-print("\n")
-
-print("Máximo de uso de CPU do Bruno:", tabela_final[tabela_final["Usuario"] == "Bruno"]["CPU%"].max())
-print("Máximo de uso de CPU do Heitor:", tabela_final[tabela_final["Usuario"] == "Heitor"]["CPU%"].max())
-print("Máximo de uso de CPU do Kevin:", tabela_final[tabela_final["Usuario"] == "Kevin"]["CPU%"].max())
-print("Máximo de uso de CPU do Ricardo:", tabela_final[tabela_final["Usuario"] == "Ricardo"]["CPU%"].max())
-print("Máximo de uso de CPU do Julia:", tabela_final[tabela_final["Usuario"] == "Julia"]["CPU%"].max())
-print("Máximo de uso de CPU do Raissa:", tabela_final[tabela_final["Usuario"] == "Raissa"]["CPU%"].max())
+df.to_csv("dados_completos.csv", sep=";", index=False)
