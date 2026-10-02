@@ -1,0 +1,5 @@
+mysql-connector-python
+getmac
+psutil
+python-dotenv
+pandas
