@@ -1,15 +1,17 @@
 import csv
 import datetime
 import os
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 import mysql.connector
 import getmac
 import psutil
 from dotenv import load_dotenv
 
-# Carrega as variáveis de ambiente
+# Carrega as variáveis de ambiente (.env)
 load_dotenv()
 
-# Configurações do Banco de Dados com porta convertida para int
+# Configurações do Banco de Dados
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
     "database": os.getenv("DB_DATABASE"),
@@ -40,6 +42,33 @@ ALL_COMPONENTS = [
 INTERVALO_SEGUNDOS = 10
 DURACAO_MINUTOS = 5
 TOTAL_CICLOS = (DURACAO_MINUTOS * 60) // INTERVALO_SEGUNDOS
+
+
+def enviar_para_s3(caminho_arquivo_local, nome_arquivo_apenas):
+
+    bucket_name = os.getenv("S3_BUCKET_BRONZE")
+    
+    if not bucket_name:
+        print("[Aviso] Variável 'S3_BUCKET_BRONZE' não configurada no .env. Upload cancelado.")
+        return False
+
+    try:
+        s3_client = boto3.client("s3")
+
+        chave_s3 = f"raw/{nome_arquivo_apenas}"
+
+        print(f"\n[S3] Enviando arquivo '{nome_arquivo_apenas}' para '{bucket_name}/raw'...")
+        
+        # Envia o arquivo CSV local para o S3
+        s3_client.upload_file(caminho_arquivo_local, bucket_name, chave_s3)
+        
+        print(f"[S3] Upload realizado com sucesso!")
+        print(f"[S3] Caminho no S3: s3://{bucket_name}/{chave_s3}")
+        return True
+
+    except (BotoCoreError, ClientError) as err:
+        print(f"[Erro S3] Falha ao enviar o arquivo para o S3: {err}")
+        return False
 
 
 def obter_configuracao_instancia(mac_address):
@@ -104,13 +133,6 @@ def obter_metricas_ativas_do_banco(mac_address):
 
 
 def obter_regras_cenario(cenario):
-    """
-    Regras de simulação para Meter Data Management (MDM - Smart Meters):
-    - incremento_pct: % somada em CPU, RAM e Disco (+20%, +40%, +60%)
-    - mult_received: Multiplicador para o volume de dados enviado pelos relógios
-    - add_received_mb: Carga em MB de telemetria/leituras de consumo por ciclo (10s)
-    - mult_sent / add_sent_mb: Respostas de confirmação do servidor MDM aos medidores
-    """
     regras = {
         "NORMAL": {
             "incremento_pct": 20,
@@ -122,16 +144,16 @@ def obter_regras_cenario(cenario):
         },
         "ACIMA_DA_MEDIA": {
             "incremento_pct": 40,
-            "mult_received": 4.0,     # Quadruplica o tráfego real
-            "add_received_mb": 30.0,  # +30 MB/ciclo de leituras de consumo em lote
-            "mult_sent": 1.2,         # Confirmações simples de recebimento
+            "mult_received": 4.0,
+            "add_received_mb": 30.0,
+            "mult_sent": 1.2,
             "add_sent_mb": 1.5,
             "add_package_drop": 5,
         },
         "ALTA_DEMANDA": {
             "incremento_pct": 60,
-            "mult_received": 8.0,     # Octuplica o tráfego real
-            "add_received_mb": 80.0,  # +80 MB/ciclo (pico de sincronização em massa)
+            "mult_received": 8.0,
+            "add_received_mb": 80.0,
             "mult_sent": 1.5,
             "add_sent_mb": 4.0,
             "add_package_drop": 25,
@@ -172,12 +194,14 @@ def capturar():
 
     horario_nome = datetime.datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
     mac_formatado = mac_address.replace(":", "-")
-    nome_arquivo = f"./{mac_formatado}--{horario_nome}.csv"
+    nome_arquivo_apenas = f"{mac_formatado}--{horario_nome}.csv"
+    caminho_arquivo_local = f"./{nome_arquivo_apenas}"
 
     raiz_disco = os.path.abspath(os.sep)
     rede_anterior = psutil.net_io_counters()
 
-    with open(nome_arquivo, "w", newline="", encoding="utf-8") as csvfile:
+    # 1. Abre e grava o arquivo CSV localmente durante os 5 minutos de captura
+    with open(caminho_arquivo_local, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.writer(csvfile, delimiter=";")
         writer.writerow(ALL_COMPONENTS)
 
@@ -195,7 +219,6 @@ def capturar():
             dados_rede = psutil.net_io_counters()
             disco = psutil.disk_usage(raiz_disco)
 
-            # Variação real da rede no intervalo de 10s (em MB)
             bytes_enviados_delta = max(dados_rede.bytes_sent - rede_anterior.bytes_sent, 0)
             bytes_recebidos_delta = max(dados_rede.bytes_recv - rede_anterior.bytes_recv, 0)
             pacotes_perdidos_delta = max(
@@ -217,8 +240,6 @@ def capturar():
             disk_use_simulado = min(disco.percent + incremento_pct, 100.0)
             disk_free_pct = max(100.0 - disk_use_simulado, 0.0)
 
-            
-            # O volume de entrada (leituras/telemetria) escala de acordo com a demanda do cenário
             network_received = (mb_recebidos_real * regras["mult_received"]) + regras["add_received_mb"]
             network_sent = (mb_enviados_real * regras["mult_sent"]) + regras["add_sent_mb"]
             package_drop = pacotes_perdidos_delta + regras["add_package_drop"]
@@ -248,7 +269,10 @@ def capturar():
                 f"Respostas Enviadas: {network_sent:.2f} MB"
             )
 
-    print("\nCaptura de 5 minutos finalizada com sucesso.")
+    print("\nCaptura local finalizada com sucesso.")
+
+    # 2. Envia o arquivo gravado para o S3 (após fechar o bloco 'with open')
+    enviar_para_s3(caminho_arquivo_local, nome_arquivo_apenas)
 
 
 if __name__ == "__main__":
