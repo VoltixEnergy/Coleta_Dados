@@ -3,3 +3,4 @@ getmac
 psutil
 python-dotenv
 pandas
+boto3

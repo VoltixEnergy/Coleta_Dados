@@ -51,3 +51,5 @@ coverage.xml
 .env
 .env.*
 .secrets
+
+data/
