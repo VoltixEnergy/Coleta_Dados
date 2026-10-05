@@ -283,7 +283,7 @@ def capturar():
     )
 
     caminho_arquivo_local = (
-        f"./{nome_arquivo_apenas}"
+        f"./data/{nome_arquivo_apenas}"
     )
 
     raiz_disco = os.path.abspath(os.sep)
