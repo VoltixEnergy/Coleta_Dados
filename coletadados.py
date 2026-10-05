@@ -37,6 +37,7 @@ ALL_COMPONENTS = [
     "instancia_id",
     "mac_address",
     "created_at",
+    "containers_qnt"
 ] + COMPONENTES_METRICAS
 
 INTERVALO_SEGUNDOS = 10
@@ -446,6 +447,8 @@ def capturar():
 
             package_drop = pacotes_perdidos_delta
 
+            
+
             # ==========================
             # VALORES DO CICLO
             # ==========================
@@ -460,6 +463,10 @@ def capturar():
 
                 "created_at":
                     horario_atual,
+
+                "containers_qnt":
+                    quantidade_docker,
+                                
 
                 "cpu_use_percent":
                     f"{cpu:.2f}"
@@ -495,6 +502,8 @@ def capturar():
                     f"{package_drop:.2f}"
                     if record["package_drop_total"]
                     else "",
+
+                
             }
 
             linha_dados = [
