@@ -13,9 +13,9 @@ from dotenv import load_dotenv
 # Carrega as variáveis definidas no arquivo .env (ex: S3_BUCKET_BRONZE, S3_BUCKET_SILVER)
 load_dotenv()
 
-# Nome dos Buckets AWS S3 recuperados do .env (com valores padrão como fallback)
-BUCKET_BRONZE = os.getenv("S3_BUCKET_BRONZE", "meu-bucket-bronze")
-BUCKET_SILVER = os.getenv("S3_BUCKET_SILVER", "meu-bucket-silver")
+
+BUCKET_BRONZE = os.getenv("S3_BUCKET_BRONZE")
+BUCKET_SILVER = os.getenv("S3_BUCKET_SILVER")
 
 
 # ==============================================================================
