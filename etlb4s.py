@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 # Carrega as variáveis definidas no arquivo .env (ex: S3_BUCKET_BRONZE, S3_BUCKET_SILVER)
 load_dotenv()
 
-
 BUCKET_BRONZE = os.getenv("S3_BUCKET_BRONZE")
 BUCKET_SILVER = os.getenv("S3_BUCKET_SILVER")
 
