@@ -99,7 +99,6 @@ def limpar_e_enriquecer_dados(df):
     print(f"[CLEAN] Duplicatas removidas: {linhas_antes - len(df)}")
 
     df["mac_address"] = df["mac_address"].str.upper().str.strip()
-    df["cenario"] = df["cenario"].str.upper().str.strip()
 
     df["created_at"] = pd.to_datetime(
         df["created_at"],
@@ -143,7 +142,7 @@ def gerar_estatisticas_agregadas(df):
         (df["cpu_use_percent"] > 80) | (df["ram_use_percent"] > 85)
     ).astype(int)
 
-    agregado = df.groupby(["instancia_id", "cenario", "mac_address"]).agg(
+    agregado = df.groupby(["instancia_id", "mac_address"]).agg(
         total_ciclos_analisados=("created_at", "count"),
 
         cpu_media=("cpu_use_percent", "mean"),
