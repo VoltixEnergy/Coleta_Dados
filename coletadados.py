@@ -389,7 +389,7 @@ def capturar():
             # ==========================
 
             cpu = min(
-                cpu_real + impacto_docker_pct,
+                cpu_real,
                 100.0
             )
 
@@ -403,7 +403,7 @@ def capturar():
             )
 
             ram_uso_simulado = min(
-                ram.percent + impacto_docker_pct,
+                ram.percent,
                 99.0
             )
 
@@ -424,7 +424,7 @@ def capturar():
             # ==========================
 
             disk_use_simulado = min(
-                disco.percent + impacto_docker_pct,
+                disco.percent,
                 100.0
             )
 
