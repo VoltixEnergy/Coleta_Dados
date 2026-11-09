@@ -8,6 +8,7 @@ import mysql.connector
 import getmac
 import psutil
 from dotenv import load_dotenv
+import logs_colector
 
 # Carrega as variáveis de ambiente (.env)
 load_dotenv()
@@ -538,12 +539,22 @@ def capturar():
         "\nCaptura local finalizada com sucesso."
     )
 
+
+    log_file_path = f"./data/{mac_formatado}--{horario_nome}--logs.csv"
+    csv_text = logs_colector.main("{DURACAO_MINUTOS}m")
+    with open(log_file_path, "w", encoding="utf-8") as file:
+      file.write(csv_text)
+
+    enviar_para_s3(
+      log_file_path,
+      f"logs/{mac_formatado}--{horario_nome}.csv"
+    )
+
     # Envia o arquivo para o S3
     enviar_para_s3(
         caminho_arquivo_local,
         nome_arquivo_apenas
     )
-
 
 if __name__ == "__main__":
     capturar()
