@@ -8,7 +8,7 @@ import mysql.connector
 import getmac
 import psutil
 from dotenv import load_dotenv
-import logs_colector
+import logs_collector
 
 # Carrega as variáveis de ambiente (.env)
 load_dotenv()
@@ -541,7 +541,7 @@ def capturar():
 
 
     log_file_path = f"./data/{mac_formatado}--{horario_nome}--logs.csv"
-    csv_text = logs_colector.main("{DURACAO_MINUTOS}m")
+    csv_text = logs_collector.main("{DURACAO_MINUTOS}m")
     with open(log_file_path, "w", encoding="utf-8") as file:
       file.write(csv_text)
 
