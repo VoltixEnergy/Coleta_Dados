@@ -1,4 +1,5 @@
 import subprocess
+import getmac
 
 def get_containers_name():
   docker_ps_query = None
@@ -42,11 +43,17 @@ def get_container_logs(names: list, since: str):
   return container_logs
 
 def transform_logs_to_csv_text(logs: dict):
-  csv_output = "container_name;level;ts;scope;message;stacktrace\n"
+  csv_output = "mac_address;container_name;level;ts;scope;message;stacktrace\n"
+
+  mac_address = (
+    getmac.get_mac_address()
+    or "Desconhecido"
+  )
+
   for container_name, logs in logs.items():
     for log in logs:
       log_splited = None
-
+      print(log)
       try:
         log_splited = log.split(" | ")
       except:
@@ -58,7 +65,7 @@ def transform_logs_to_csv_text(logs: dict):
         log_timestamp = log_splited[1] + ";"
         log_scope = log_splited[2] + ";"
         log_message = log_splited[3] + ";"
-        csv_output += container_name + ";" + log_level + log_timestamp + log_scope + log_message
+        csv_output += mac_address + ";" + container_name + ";" + log_level + log_timestamp + log_scope + log_message
         continue
       if log_splited[0] == "ERROR":
         csv_output += "\n"
@@ -66,7 +73,7 @@ def transform_logs_to_csv_text(logs: dict):
         log_timestamp = log_splited[1] + ";"
         log_scope = log_splited[2] + ";"
         log_message = log_splited[3] + ";"
-        csv_output += container_name + ";" + log_level + log_timestamp + log_scope + log_message
+        csv_output += mac_address + ";" + container_name + ";" + log_level + log_timestamp + log_scope + log_message
         continue
       
       csv_output += log
