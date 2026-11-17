@@ -3,12 +3,18 @@ import getmac
 
 def get_containers_name():
   docker_ps_query = None
+  docker_ps_query2 = None
 
   try:
     docker_ps_query = subprocess.check_output(
         "docker ps -a",
         shell=True
     ).decode("utf-8")
+
+    docker_ps_query2 = subprocess.check_output(
+          "docker ps",
+          shell=True
+      ).decode("utf-8")
   except:
     print("Erro ao executar: docker ps -a")
     return []
@@ -16,13 +22,15 @@ def get_containers_name():
   containers_info = docker_ps_query.split("\n")
   containers_info = containers_info[1 : len(containers_info) -1]
 
+  active_containers = len(docker_ps_query2.split("\n")) -2
+
   container_names = []
   for info in containers_info:
     info_splited = info.split(" ")
     container_name = info_splited[len(info_splited) -1]
     container_names.append(container_name)
 
-  return container_names
+  return container_names, active_containers
 
 def get_container_logs(names: list, since: str):
   container_logs = {}
@@ -42,8 +50,10 @@ def get_container_logs(names: list, since: str):
 
   return container_logs
 
-def transform_logs_to_csv_text(logs: dict):
-  csv_output = "mac_address;container_name;level;ts;scope;message;stacktrace\n"
+def transform_logs_to_csv_text(logs: dict, all_containers, active_containers):
+  all_containers = str(all_containers)
+  active_containers = str(active_containers)
+  csv_output = "mac_address;containers_count;active_containers_count;container_name;level;ts;scope;message;stacktrace\n"
 
   mac_address = (
     getmac.get_mac_address()
@@ -53,7 +63,6 @@ def transform_logs_to_csv_text(logs: dict):
   for container_name, logs in logs.items():
     for log in logs:
       log_splited = None
-      print(log)
       try:
         log_splited = log.split(" | ")
       except:
@@ -65,7 +74,7 @@ def transform_logs_to_csv_text(logs: dict):
         log_timestamp = log_splited[1] + ";"
         log_scope = log_splited[2] + ";"
         log_message = log_splited[3] + ";"
-        csv_output += mac_address + ";" + container_name + ";" + log_level + log_timestamp + log_scope + log_message
+        csv_output += mac_address + ";" + all_containers + ";" + active_containers + ";" + container_name + ";" + log_level + log_timestamp + log_scope + log_message
         continue
       if log_splited[0] == "ERROR":
         csv_output += "\n"
@@ -73,7 +82,7 @@ def transform_logs_to_csv_text(logs: dict):
         log_timestamp = log_splited[1] + ";"
         log_scope = log_splited[2] + ";"
         log_message = log_splited[3] + ";"
-        csv_output += mac_address + ";" + container_name + ";" + log_level + log_timestamp + log_scope + log_message
+        csv_output += mac_address + ";" + all_containers + ";" + active_containers + ";" + container_name + ";" + log_level + log_timestamp + log_scope + log_message
         continue
       
       csv_output += log
@@ -82,8 +91,8 @@ def transform_logs_to_csv_text(logs: dict):
   return csv_output
 
 def main(since: str = "5m"):
-  containers_name = get_containers_name()
+  containers_name, active_containers = get_containers_name()
   logs = get_container_logs(containers_name, since)
-  csv_text = transform_logs_to_csv_text(logs)
+  csv_text = transform_logs_to_csv_text(logs, len(containers_name), active_containers)
 
   return csv_text
