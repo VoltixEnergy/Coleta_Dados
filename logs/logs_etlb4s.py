@@ -94,7 +94,7 @@ def limpar_e_transformar_dados(df):
 
     df = df.dropna(subset=["mac_address", "container_name", "level", "ts", "scope", "message"])
 
-    df["mac_address"] = df["mac_address"].str.upper().str.strip()
+    df["mac_address"] = df["mac_address"].str.upper().str.strip().str.replace(":", "")
 
     df["created_at"] = pd.to_datetime(
         df["ts"],
