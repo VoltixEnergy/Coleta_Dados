@@ -15,6 +15,8 @@ BUCKET_GOLD = os.getenv("S3_BUCKET_GOLD")
 BUCKET_SILVER_BEFORE_PREFIX = "logs/"
 BUCKET_SILVER_AFTER_PREFIX = "logs/processed/"
 
+BUCKET_GOLD_PREFIX = "logs/"
+
 def get_data_from_database(connection):
   query = """
     SELECT empresa_id, endereco_mac, nome
@@ -49,30 +51,29 @@ def organize_data_to_dict(data):
   return companies_with_instances
 
 def load_csvs_from_silver(s3_client):
-  df_list = []
-  processed_keys = []
-
+  print(f"[EXTRACT] Listando '{BUCKET_SILVER_BEFORE_PREFIX}' no bucket '{BUCKET_SILVER}'...")
+  
+  files = []
   paginator = s3_client.get_paginator("list_objects_v2")
   for page in paginator.paginate(Bucket=BUCKET_SILVER, Prefix=BUCKET_SILVER_BEFORE_PREFIX):
-    for obj in page.get("Contents", []):
-      key = obj["Key"]
+      for obj in page.get("Contents", []):
+          if obj["Key"].endswith(".csv"):
+              files.append(obj)
 
-      if key.endswith(".csv"):
-        response = s3_client.get_object(Bucket=BUCKET_SILVER, Key=key)
-        content = response["Body"].read().decode("utf-8")
+  if not files:
+      print("[Aviso] Nenhum CSV encontrado no Silver.")
+      return pd.DataFrame()
 
-        temp_df = pd.read_csv(io.StringIO(content), sep=";", dtype=str)
-        df_list.append(temp_df)
-        processed_keys.append(key)
+  files.sort(key=lambda obj: obj["LastModified"], reverse=True)
 
-  if not df_list:
-    print("[Aviso] Nenhum arquivo CSV novo encontrado no prefixo 'logs/'.")
-    return pd.DataFrame(), []
+  df_list = []
+  for obj in files:
+      resposta = s3_client.get_object(Bucket=BUCKET_SILVER, Key=obj["Key"])
+      df_list.append(pd.read_csv(io.BytesIO(resposta["Body"].read()), sep=";"))
 
-  consolidated_df = pd.concat(df_list, ignore_index=True)
-
-  print(f"[EXTRACT] Total de registros brutos extraídos: {len(consolidated_df)}")
-  return consolidated_df, processed_keys
+  df = pd.concat(df_list, ignore_index=True)
+  print(f"[EXTRACT] {len(files)} arquivo(s) lido(s), {len(df)} registros.")
+  return df
 
 def main_pipeline():
   try:
@@ -91,10 +92,15 @@ def main_pipeline():
 
   try:
     s3_client = boto3.client("s3")
-    consolidated_df, processed_keys = load_csvs_from_silver(s3_client)
+    df = load_csvs_from_silver(s3_client)
   except:
     print("Erro na conexão com o bucket")
 
+  if df.empty:
+    print("[INFO] Fluxo interrompido: nenhum dado para processar.")
+    return
+  
+  print(df)
 
 def lambda_handler(event, context):
   main_pipeline()
