@@ -8,7 +8,7 @@ import mysql.connector
 import getmac
 import psutil
 from dotenv import load_dotenv
-import logs_collector
+import logs.logs_collector as logs_collector
 
 # Carrega as variáveis de ambiente (.env)
 load_dotenv()
