@@ -75,6 +75,64 @@ def load_csvs_from_silver(s3_client):
   print(f"[EXTRACT] {len(files)} arquivo(s) lido(s), {len(df)} registros.")
   return df
 
+def get_log_levels(df: pd.DataFrame):
+  distinct_count = df.groupby("level").count()
+  distinct_mac_address = distinct_count.get("mac_address")
+  total = int(distinct_mac_address.sum())
+  info = int(distinct_mac_address.get("INFO", 0))
+  warn = int(distinct_mac_address.get("WARN", 0))
+  error = int(distinct_mac_address.get("ERROR", 0))
+
+  return {
+    "total": total,
+    "infos": info,
+    "warnings": warn,
+    "errors": error
+  }
+
+def get_error_rate(total: int, error: int):
+  if total == 0 or error == 0:
+    return 0
+  
+
+  error_rate = error / total * 100
+
+  return f"{error_rate:.2f}"
+
+def get_application_status(df: pd.DataFrame):
+  containers_count = int(df.get("containers_count").mean())
+  active_containers_count = int(df.get("active_containers_count").mean())
+
+  if containers_count == 0 or active_containers_count == 0:
+    return "Sem Operação"
+  
+  active_containers_rate = active_containers_count / containers_count * 100
+  
+  if active_containers_rate < 25:
+    return "Capacidade Criticamente Reduzida"
+  if active_containers_rate < 50:
+    return "Capacidade Moderadamente Reduzida"
+  if active_containers_rate < 75:
+    return "Capacidade Reduzida"
+  if active_containers_rate < 90:
+    return "Capacidade "
+  
+  return "Operação Normal"
+
+def get_distinct_errors(df: pd.DataFrame):
+  errors_already_readed = []
+  error_messages = df.loc[df['level'] == "ERROR", ['message']]
+
+  for _, row in error_messages.iterrows():
+    substring_row = row["message"][:36]
+
+    if substring_row not in errors_already_readed:
+      errors_already_readed.append(substring_row)
+
+
+  return errors_already_readed
+
+
 def main_pipeline():
   try:
     connection = driver_mysql.connect(
@@ -99,9 +157,20 @@ def main_pipeline():
   if df.empty:
     print("[INFO] Fluxo interrompido: nenhum dado para processar.")
     return
-  
-  print(df)
 
+  response = {
+    "kpis": {
+      "logsVolume": None
+    }
+  }
+
+  response['kpis']['logsVolume'] = get_log_levels(df)
+  response['kpis']['errorRate'] = get_error_rate(response['kpis']['logsVolume']["total"], response['kpis']['logsVolume']["errors"])
+
+  response['kpis']['status'] = get_application_status(df)
+  distincts_errors = get_distinct_errors(df)
+  response['kpis']['errorCounting'] = len(distincts_errors)
+  
 def lambda_handler(event, context):
   main_pipeline()
   return {"statusCode": 200, "body": "Gold atualizado"}
