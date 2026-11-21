@@ -22,24 +22,23 @@ DB_CONFIG = {
     "port": int(os.getenv("DB_PORT", 3306)),
 }
 
-# Métricas que podem ser coletadas
+
 COMPONENTES_METRICAS = [
     "cpu_use_percent",
-    "ram_total_gb",
-    "ram_free_gb",
-    "disk_free_percent",
+    "ram_use_percent",  
+    "disk_use_percent",
     "network_sent",
     "network_received",
     "package_drop_total",
 ]
 
-# Colunas que serão gravadas no CSV
 ALL_COMPONENTS = [
     "instancia_id",
     "mac_address",
     "created_at",
     "containers_qnt"
 ] + COMPONENTES_METRICAS
+
 
 INTERVALO_SEGUNDOS = 10
 DURACAO_MINUTOS = 5
@@ -398,41 +397,13 @@ def capturar():
             # RAM
             # ==========================
 
-            ram_total = (
-                ram.total
-                / 1_073_741_824
-            )
-
-            ram_uso_simulado = min(
-                ram.percent,
-                99.0
-            )
-
-            ram_free_simulado = max(
-                ram_total
-                * (
-                    1
-                    - (
-                        ram_uso_simulado
-                        / 100.0
-                    )
-                ),
-                0.0
-            )
+            ram_uso = ram.percent
 
             # ==========================
             # DISCO
             # ==========================
 
-            disk_use_simulado = min(
-                disco.percent,
-                100.0
-            )
-
-            disk_free_pct = max(
-                100.0 - disk_use_simulado,
-                0.0
-            )
+            disk_uso = disco.percent
 
             # ==========================
             # REDE
@@ -474,19 +445,14 @@ def capturar():
                     if record["cpu_use_percent"]
                     else "",
 
-                "ram_total_gb":
-                    f"{ram_total:.2f}"
-                    if record["ram_total_gb"]
+                "ram_use_percent":
+                    f"{ram_uso:.2f}"
+                    if record["ram_use_percent"]
                     else "",
 
-                "ram_free_gb":
-                    f"{ram_free_simulado:.2f}"
-                    if record["ram_free_gb"]
-                    else "",
-
-                "disk_free_percent":
-                    f"{disk_free_pct:.2f}"
-                    if record["disk_free_percent"]
+                "disk_use_percent":
+                    f"{disk_uso:.2f}"
+                    if record["disk_use_percent"]
                     else "",
 
                 "network_sent":
@@ -525,10 +491,10 @@ def capturar():
                 f"[{horario_atual}] "
                 f"Docker: {quantidade_docker} | "
                 f"CPU: {cpu:.2f}% | "
-                f"RAM livre: "
-                f"{ram_free_simulado:.2f} GB | "
-                f"Disco livre: "
-                f"{disk_free_pct:.2f}% | "
+                f"RAM: "
+                f"{ram_uso:.2f}% | "
+                f"Disco: "
+                f"{disk_uso:.2f}% | "
                 f"Recebidos: "
                 f"{network_received:.2f} MB | "
                 f"Enviados: "
@@ -540,15 +506,15 @@ def capturar():
     )
 
 
-    log_file_path = f"./data/{mac_formatado}--{horario_nome}--logs.csv"
-    csv_text = logs_collector.main("{DURACAO_MINUTOS}m")
-    with open(log_file_path, "w", encoding="utf-8") as file:
-      file.write(csv_text)
+    # log_file_path = f"./data/{mac_formatado}--{horario_nome}--logs.csv"
+    # csv_text = logs_collector.main("{DURACAO_MINUTOS}m")
+    # with open(log_file_path, "w", encoding="utf-8") as file:
+    #   file.write(csv_text)
 
-    enviar_para_s3(
-      log_file_path,
-      f"logs/{mac_formatado}--{horario_nome}.csv"
-    )
+    # enviar_para_s3(
+    #   log_file_path,
+    #   f"logs/{mac_formatado}--{horario_nome}.csv"
+    # )
 
     # Envia o arquivo para o S3
     enviar_para_s3(
