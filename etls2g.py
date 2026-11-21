@@ -4,6 +4,9 @@ import json
 import pandas as pd
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
+from dotenv import load_dotenv
+import mysql.connector  
+
 
 
 
@@ -11,19 +14,19 @@ from botocore.exceptions import BotoCoreError, ClientError
 # 0. CONFIGURAÇÕES
 # ==============================================================================
 
+load_dotenv()
 BUCKET_SILVER = os.getenv("S3_BUCKET_SILVER")
 BUCKET_GOLD = os.getenv("S3_BUCKET_GOLD")
 
 PREFIXO_SILVER = "silver/detalhado/"   # de onde lemos
 PASTA_GOLD = "gold/"                   # dashboard de cada empresa -> gold/<id_da_empresa>.json
 PASTA_ALERTAS = "alerts/"              # alertas de cada empresa  -> alerts/<id_da_empresa>.json
-CHAVE_LIMITES = "config/limites.json"  # mínimo/máximo do banco (gerado pelo exportar_limites.py)
 
 FUSO_COLETA = "America/Sao_Paulo"
 
 JANELA_HORAS = 1          # quanto tempo para trás o gráfico mostra
 BUCKET_MINUTOS = 5        # cada ponto do gráfico resume 5 minutos
-INATIVO_APOS_MIN = 30     # sem leitura há mais que isso = servidor inativo
+INATIVO_APOS_MIN = 60     # sem leitura há mais que isso = servidor inativo
 MAX_ARQUIVOS_SILVER = 20 # lê no máximo os 200 arquivos mais recentes do Silver
 
 # Métricas que têm mínimo e máximo no banco:
@@ -31,14 +34,14 @@ MAX_ARQUIVOS_SILVER = 20 # lê no máximo os 200 arquivos mais recentes do Silve
 # Os padrões só valem para um MAC que não está no banco.
 METRICAS = {
     "cpu_use_percent":    ("CPU", "%", 0, 100),
-    "ram_free_gb":        ("RAM livre", "GB", 0, None),  
-    "disk_free_percent":  ("Disco livre", "%", 0, 100),
+    "ram_use_percent":    ("RAM", "%", 0, 100),
+    "disk_use_percent":   ("Disco", "%", 0, 100),
     "network_sent":       ("Rede enviada", "MB", 0, 1000),
     "network_received":   ("Rede recebida", "MB", 0, 1000),
     "package_drop_total": ("Pacotes perdidos", "un", 0, 100),
 }
 
-# Preenchido na execução com o conteúdo de config/limites.json:
+# Preenchido na execução com o mínimo e o máximo de cada métrica, lidos do banco:
 
 LIMITES = {}
 
@@ -126,27 +129,66 @@ def carregar_silver(s3_client):
     return df
 
 
-def carregar_limites(s3_client):
-    """
-    Lê do config/limites.json (gravado pelo exportar_limites.py):
-      - o mínimo e o máximo de cada métrica de cada servidor;
-      - a empresa dona de cada servidor.
-    Devolve (limites, empresas). Se o arquivo ainda não existe, devolve dois dicionários vazios.
-    """
-    try:
-        resposta = s3_client.get_object(Bucket=BUCKET_GOLD, Key=CHAVE_LIMITES)
-    except ClientError as err:
-        if err.response["Error"]["Code"] in ("NoSuchKey", "404"):
-            print(
-                f"[Aviso] Limites não encontrados em s3://{BUCKET_GOLD}/{CHAVE_LIMITES}. "
-                "Rode o exportar_limites.py. Sem eles, as notas usam faixas padrão e não há alertas."
-            )
-            return {}, {}
-        raise
+def conectar_banco():
+    """Conecta no MySQL com as variáveis de ambiente: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_DATABASE."""
+    return mysql.connector.connect(
+        host=os.getenv("DB_HOST"),
+        port=int(os.getenv("DB_PORT", "3306")),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_DATABASE", "voltix"),
+        connection_timeout=10,
+    )
 
-    dados = json.loads(resposta["Body"].read().decode("utf-8"))
-    print(f"[LIMITES] {len(dados['limites'])} servidor(es) no banco (gerado em {dados.get('gerado_em')}).")
-    return dados["limites"], dados.get("empresas", {})
+
+def formatar_mac(mac):
+    """E0D55DAA58E3 -> E0:D5:5D:AA:58:E3 (o mesmo formato que as Lambdas usam)."""
+    if isinstance(mac, (bytes, bytearray)):
+        mac = mac.decode()
+    mac = str(mac).replace(":", "").replace("-", "").upper()
+    return ":".join(mac[i:i + 2] for i in range(0, len(mac), 2))
+
+
+def carregar_limites():
+    """
+    Lê direto do banco MySQL:
+      - a empresa dona de cada servidor (tabela instancia);
+      - o mínimo e o máximo de cada métrica de cada servidor (tabela metrica).
+    Devolve (limites, empresas):
+      limites  = {mac: {metrica: {metrica_id, minimo, maximo, unidade}}}
+      empresas = {mac: id_da_empresa}
+    """
+    print(f"[BANCO] Conectando em '{os.getenv('DB_HOST')}' (banco '{os.getenv('DB_DATABASE', 'voltix')}')...")
+    conexao = conectar_banco()
+    try:
+        cursor = conexao.cursor()
+
+        cursor.execute("SELECT endereco_mac, empresa_id FROM instancia WHERE deletado_em IS NULL")
+        empresas = {formatar_mac(mac): str(empresa_id) for mac, empresa_id in cursor.fetchall()}
+
+        cursor.execute("""
+            SELECT i.endereco_mac, m.id, e.nome, m.minimo, m.maximo, m.unidade_medida
+            FROM metrica m
+            JOIN especificacao e ON e.id = m.especificacao_id
+            JOIN instancia i ON i.id = m.instancia_id
+            WHERE m.deletado_em IS NULL
+              AND i.deletado_em IS NULL
+        """)
+        linhas = cursor.fetchall()
+    finally:
+        conexao.close()
+
+    limites = {}
+    for mac, metrica_id, metrica, minimo, maximo, unidade in linhas:
+        dados = {"metrica_id": str(metrica_id), "unidade": unidade}
+        if minimo is not None:   # mínimo/máximo vazio no banco: vale o padrão da tabela METRICAS
+            dados["minimo"] = float(minimo)
+        if maximo is not None:
+            dados["maximo"] = float(maximo)
+        limites.setdefault(formatar_mac(mac), {})[metrica] = dados
+
+    print(f"[BANCO] {len(empresas)} servidor(es) e {len(limites)} com métricas cadastradas.")
+    return limites, empresas
 
 
 # ==============================================================================
@@ -154,8 +196,7 @@ def carregar_limites(s3_client):
 # ==============================================================================
 COLUNAS_OBRIGATORIAS = [
     "mac_address", "created_at",
-    "cpu_use_percent", "ram_use_percent", "ram_free_gb", "ram_total_gb",
-    "disk_use_percent", "disk_free_percent",
+    "cpu_use_percent", "ram_use_percent", "disk_use_percent",
     "network_sent", "network_received", "package_drop_total",
 ]
 
@@ -211,8 +252,6 @@ def faixa(m, metrica):
 
     minimo = pd.Series(minimos, index=m.index, dtype=float)
     maximo = pd.Series(maximos, index=m.index, dtype=float)
-    if metrica == "ram_free_gb":
-        maximo = m["ram_total_gb"]  # a RAM livre nunca passa da RAM total da máquina
     return minimo, maximo
 
 
@@ -248,8 +287,8 @@ def calcular_scores(m):
     m["termometro"] = pd.concat(
         [
             nota_da("cpu_use_percent", True),    # mais CPU usada = mais quente
-            nota_da("ram_free_gb", False),       # menos RAM livre = mais quente
-            nota_da("disk_free_percent", False), # menos disco livre = mais quente
+            nota_da("ram_use_percent", True),    # mais RAM usada = mais quente
+            nota_da("disk_use_percent", True),   # mais disco usado = mais quente
         ],
         axis=1,
     ).mean(axis=1)
@@ -356,7 +395,7 @@ def montar_alertas(m):
                     f"{nome_servidor(mac)}: {nome} em {numero(valor)} {unidade}, "
                     f"{lado} configurado ({numero(limite)} {unidade})."
                 ),
-                "metric_id": int(dados["metrica_id"]),
+                "metric_id": dados["metrica_id"],
                 "created_at": iso_utc(ativos.at[mac, "ultima_leitura"]),
                 "_servidor": mac,  # só para contar; removido depois
             })
@@ -442,7 +481,7 @@ def salvar_json_no_s3(s3_client, dados, chave_s3):
 # 5. ORQUESTRAÇÃO / FLUXO PRINCIPAL
 # ==============================================================================
 def executar_gold():
-    """Silver (CSVs detalhados) + limites do banco -> cálculos -> Gold (dashboard + alertas, um JSON de cada por empresa)."""
+    """Silver (CSVs detalhados) + limites lidos do banco -> cálculos -> Gold (dashboard + alertas, um JSON de cada por empresa)."""
     global LIMITES, EMPRESAS
     try:
         if not BUCKET_SILVER or not BUCKET_GOLD:
@@ -450,12 +489,9 @@ def executar_gold():
 
         s3_client = boto3.client("s3")
 
-        LIMITES, EMPRESAS = carregar_limites(s3_client)
+        LIMITES, EMPRESAS = carregar_limites()
         if not EMPRESAS:
-            raise ValueError(
-                "O arquivo de limites não tem as empresas. Rode o exportar_limites.py "
-                "(versão nova) para gravar config/limites.json."
-            )
+            raise ValueError("Nenhum servidor cadastrado no banco (tabela instancia).")
 
         df = carregar_silver(s3_client)
         if df.empty:
@@ -490,8 +526,8 @@ def executar_gold():
         # Um JSON por empresa: cada um só enxerga os servidores da própria empresa.
         for empresa_id, df_empresa in df.groupby("empresa_id"):
             dashboard, alertas = montar_dashboard(df_empresa.drop(columns="empresa_id"), agora)
-            salvar_json_no_s3(s3_client, dashboard, chave_da_empresa(int(empresa_id)))
-            salvar_json_no_s3(s3_client, alertas, chave_alertas_da_empresa(int(empresa_id)))
+            salvar_json_no_s3(s3_client, dashboard, chave_da_empresa(empresa_id))
+            salvar_json_no_s3(s3_client, alertas, chave_alertas_da_empresa(empresa_id))
 
         print("\n[SUCESSO] Pipeline Silver -> Gold executado com êxito!")
 
