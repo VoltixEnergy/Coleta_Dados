@@ -86,7 +86,7 @@ def limpar_e_enriquecer_dados(df):
     - Substituição de valores vazios por Nulo (NaN)
     - Remoção de duplicatas e dados inválidos
     - Conversão de tipos (Texto para Data/Hora e Numérico)
-    - Criação de colunas calculadas por linha (ex: % de RAM e Disco usados)
+    - Criação de colunas calculadas por linha (ex: tráfego total de rede)
     """
     print("\n[DATA CLEAN] Iniciando limpeza e conversão de tipos...")
 
@@ -108,9 +108,8 @@ def limpar_e_enriquecer_dados(df):
 
     colunas_numericas = [
         "cpu_use_percent",
-        "ram_total_gb",
-        "ram_free_gb",
-        "disk_free_percent",
+        "ram_use_percent",
+        "disk_use_percent",
         "network_sent",
         "network_received",
         "package_drop_total",
@@ -120,9 +119,6 @@ def limpar_e_enriquecer_dados(df):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df["ram_used_gb"] = (df["ram_total_gb"] - df["ram_free_gb"]).round(2)
-    df["ram_use_percent"] = ((df["ram_used_gb"] / df["ram_total_gb"]) * 100).round(2)
-    df["disk_use_percent"] = (100.0 - df["disk_free_percent"]).round(2)
     df["network_total_mb"] = (df["network_sent"] + df["network_received"]).round(2)
 
     return df
@@ -155,7 +151,7 @@ def gerar_estatisticas_agregadas(df):
         ram_uso_percent_pico=("ram_use_percent", "max"),
 
         disco_uso_percent_medio=("disk_use_percent", "mean"),
-        disco_livre_percent_minimo=("disk_free_percent", "min"),
+        disco_uso_percent_pico=("disk_use_percent", "max"),
 
         rede_recebida_total_mb=("network_received", "sum"),
         rede_enviada_total_mb=("network_sent", "sum"),
