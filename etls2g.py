@@ -437,12 +437,13 @@ def montar_dashboard(df, agora):
 
     ativas = m[m["ativa"]]
     eficiencias = ativas["eficiencia"].dropna()
+    termometros = ativas["termometro"].dropna()
     kpis = {
         "count_server": int(len(m)),
         "count_server_active": int(len(ativas)),
         "count_server_alert": len({a["_servidor"] for a in alertas}),
-        # maior nota do termômetro (o servidor mais "quente") entre os servidores ativos
-        "server_termometro": inteiro(ativas["termometro"].max()) if len(ativas) else 0,
+        # MAC do servidor ativo com o maior termômetro; null se não há servidor ativo
+        "server_termometro": termometros.idxmax() if len(termometros) else None,
         # MAC do servidor ativo com a menor eficiência (null se não há servidor ativo)
         "server_efficiency": eficiencias.idxmin() if len(eficiencias) else None,
     }
